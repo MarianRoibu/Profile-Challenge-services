@@ -4,7 +4,7 @@ const cors = require("cors");
 const jwtCheck = require("./utils/authz.js")
 const { 
     userRouter
-} = require("./routes")
+} = require("./routes/index.js")
 const {
     PORT,
     DB
