@@ -1,72 +1,61 @@
 const { UserModel } = require("../models");
 const { uploadUserImage } = require("../utils/cloudinary");
 const fs = require("fs-extra");
+const argon2 = require("argon2");
 
 const userController = {
     postUser: async (req, res, next) => {
         const { auth: { payload: { sub } } } = req;
-        const { name, email, img, role, username } = req.body
-
-  
-
+        const { name, email, img, role, username, password } = req.body;
+      
         try {
-            const searchIfCreated = await UserModel
-                .findOne({
-                    "$or": [
-                        {
-                            email: email
-                        },
-                        {
-                            sub: sub
-                        },
-                        {
-                            username: username
-                        }
-                    ]
-                })
-                .lean()
-                .exec();
-
-            if (searchIfCreated) {
-                return res.status(412).send({
-                    status: false,
-                    msg: "User already registered."
-                })
-            }
-
-            const user = await UserModel
-                .create(
-                    {
-                        name,
-                        email,
-                        img: {
-                            secure_url: img
-                        },
-                        sub,
-                        role,
-                        username,
-                    }
-                );
-
-            if (!user) {
-                res.status(404).send({
-                    status: false,
-                    msg: "We coundn't create your user",
-                })
-                return;
-            }
-
-            res.locals.userId = user._id;
-
-            next();
+          const searchIfCreated = await UserModel.findOne({
+            "$or": [
+              { email: email },
+              { sub: sub },
+              { username: username }
+            ]
+          }).lean().exec();
+      
+          if (searchIfCreated) {
+            return res.status(412).send({
+              status: false,
+              msg: "User already registered."
+            });
+          }
+      
+          const hashedPassword = await argon2.hash(password); // Hash the password
+      
+          const user = await UserModel.create({
+            name,
+            email,
+            img: { secure_url: img },
+            sub,
+            role,
+            username,
+            password: hashedPassword // Store the hashed password in the database
+          });
+      
+          if (!user) {
+            res.status(404).send({
+              status: false,
+              msg: "We couldn't create your user",
+            });
+            return;
+          }
+      
+          res.locals.userId = user._id;
+      
+          next();
         } catch (error) {
-            res.status(500).send({
-                path: "user controller",
-                status: false,
-                msg: error.message
-            })
+          res.status(500).send({
+            path: "user controller",
+            status: false,
+            msg: error.message
+          });
         }
-    },
+      },
+
     getBySub: async (req, res) => {
         const { sub } = req.auth.payload;
       
@@ -188,34 +177,67 @@ const userController = {
     updateBasic: async (req, res) => {
         const { body } = req;
         const { userId } = req.params;
-
+      
         try {
-            const updateUser = await UserModel.findByIdAndUpdate(
-                { _id: userId },
-                { name: body.name },
-                { new: true }
-            );
-
-            if (!updateUser) {
-                res.status(404).send({
-                    status: false,
-                    msg: "User not found",
-                });
-                return;
-            }
-
-            res.status(200).send({
-                status: true,
-                msg: "User updated successfully",
-                data: updateUser,
+          const updateUser = await UserModel.findByIdAndUpdate(
+            { _id: userId },
+            { name: body.name, username: body.username },
+            { new: true }
+          );
+      
+          if (!updateUser) {
+            res.status(404).send({
+              status: false,
+              msg: "User not found",
             });
+            return;
+          }
+      
+          res.status(200).send({
+            status: true,
+            msg: "User updated successfully",
+            data: updateUser,
+          });
         } catch (error) {
-            res.status(500).send({
-                status: false,
-                msg: error.message,
-            });
+          res.status(500).send({
+            status: false,
+            msg: error.message,
+          });
         }
-    },
+      },
+      updatePassword: async (req, res) => {
+        const { body } = req;
+        const { userId } = req.params;
+      
+        try {
+          const hashedPassword = await argon2.hash(body.password); // Encrypt the new password
+      
+          const updateUser = await UserModel.findByIdAndUpdate(
+            { _id: userId },
+            { password: hashedPassword }, // Store the encrypted password in the 'password' field
+            { new: true }
+          );
+      
+          if (!updateUser) {
+            res.status(404).send({
+              status: false,
+              msg: "User not found",
+            });
+            return;
+          }
+      
+          res.status(200).send({
+            status: true,
+            msg: "Password updated successfully",
+            data: updateUser,
+          });
+        } catch (error) {
+          res.status(500).send({
+            status: false,
+            msg: error.message,
+          });
+        }
+      },
     updateUserImage: async (req, res) => {
         const { body } = req;
         const { userId } = req.params;
